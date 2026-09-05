@@ -97,11 +97,12 @@ st.markdown(
     }}
 
     .block-container {{
-        padding-top: 2rem !important;
+        padding-top: 1rem !important;
     }}
 
+    /* Spušteno niže točno ispod nogu */
     .login-wrapper {{
-        padding-top: 150px;
+        padding-top: 480px;
     }}
     
     .admin-panel {{
@@ -285,7 +286,6 @@ else:
                 "Accept": "application/vnd.github.v3+json"
             }
             
-            # Povlačimo cijelu strukturu repozitorija u samo JEDNOM pozivu (recursive=1)
             api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/git/trees/HEAD?recursive=1"
             response = requests.get(api_url, headers=headers)
             
@@ -294,7 +294,6 @@ else:
                 
                 for item in tree_data:
                     path = item.get("path", "")
-                    # Filtriramo datoteke koje se nalaze u galerija1 ili galerija2 i formati su slika
                     if path.startswith(("galerija1/", "galerija2/")) and path.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
                         file_name = path.split('/')[-1]
                         download_url = f"https://raw.githubusercontent.com/{repo_owner}/{repo_name}/main/{path}"
@@ -307,7 +306,6 @@ else:
         except Exception as e:
             st.error(f"Greška prilikom spajanja na GitHub: {e}")
 
-        # Pametno sortiranje po brojevima u nazivu datoteke
         def extract_number(resource):
             public_id = resource.get("public_id", "")
             match = re.search(r'\((\d+)\)', public_id)
