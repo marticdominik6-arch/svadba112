@@ -100,9 +100,9 @@ st.markdown(
         padding-top: 1rem !important;
     }}
 
-    /* Spušteno niže točno ispod nogu */
+    /* Spušteno za dodatnih 150px (ukupno 630px) */
     .login-wrapper {{
-        padding-top: 480px;
+        padding-top: 630px;
     }}
     
     .admin-panel {{
