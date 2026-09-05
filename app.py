@@ -271,7 +271,7 @@ else:
 
         st.divider()
 
-    # DOHVAT SLIKA IZ OBA FOLDERA (galerija1 i galerija2) S GITHUBA
+    # ULTRABRZI DOHVAT SLIKA IZ OBA FOLDERA KROZ GIT TREES API
     @st.cache_data(ttl=3600)
     def fetch_github_images():
         image_resources = []
@@ -285,32 +285,24 @@ else:
                 "Accept": "application/vnd.github.v3+json"
             }
             
-            # Provjeravamo obje mape redom
-            folders_to_check = ["galerija1", "galerija2"]
+            # Povlačimo cijelu strukturu repozitorija u samo JEDNOM pozivu (recursive=1)
+            api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/git/trees/HEAD?recursive=1"
+            response = requests.get(api_url, headers=headers)
             
-            for folder_path in folders_to_check:
-                page = 1
-                while True:
-                    api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{folder_path}?page={page}&per_page=100"
-                    response = requests.get(api_url, headers=headers)
-                    
-                    if response.status_code != 200:
-                        break # Ako folder ne postoji, nastavi dalje
+            if response.status_code == 200:
+                tree_data = response.json().get("tree", [])
+                
+                for item in tree_data:
+                    path = item.get("path", "")
+                    # Filtriramo datoteke koje se nalaze u galerija1 ili galerija2 i formati su slika
+                    if path.startswith(("galerija1/", "galerija2/")) and path.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+                        file_name = path.split('/')[-1]
+                        download_url = f"https://raw.githubusercontent.com/{repo_owner}/{repo_name}/main/{path}"
                         
-                    files = response.json()
-                    if not isinstance(files, list) or len(files) == 0:
-                        break
-                        
-                    for file in files:
-                        if file["type"] == "file" and file["name"].lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
-                            image_resources.append({
-                                "secure_url": file["download_url"],
-                                "public_id": file["name"]
-                            })
-                    
-                    if len(files) < 100:
-                        break
-                    page += 1
+                        image_resources.append({
+                            "secure_url": download_url,
+                            "public_id": file_name
+                        })
                 
         except Exception as e:
             st.error(f"Greška prilikom spajanja na GitHub: {e}")
