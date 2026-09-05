@@ -19,14 +19,25 @@ if "is_admin" not in st.session_state:
 if "viewing_image_index" not in st.session_state:
     st.session_state.viewing_image_index = None
 
-# Dohvat pozadinske slike (iz Secrets-a, sesije ili zadana elegantna)
-if "custom_bg_url" not in st.session_state:
+# Automatski dohvat pozadine (traži background.jpg direktno s GitHuba, ako ne postoji uzima zadanu)
+@st.cache_data(ttl=60)
+def get_background_url():
     try:
-        st.session_state.custom_bg_url = st.secrets["github"]["background_url"]
+        repo_owner = st.secrets["github"]["owner"]
+        repo_name = st.secrets["github"]["repo"]
+        token = st.secrets["github"]["token"]
+        
+        api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/background.jpg"
+        headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+        
+        response = requests.get(api_url, headers=headers)
+        if response.status_code == 200:
+            return response.json().get("download_url")
     except Exception:
-        st.session_state.custom_bg_url = "https://images.unsplash.com/photo-1519741497674-611481863552"
+        pass
+    return "https://images.unsplash.com/photo-1519741497674-611481863552"
 
-background_css = st.session_state.custom_bg_url
+background_css = get_background_url()
 
 # 2. Vrhunski CSS za elegantan izgled i pozicioniranje
 st.markdown(
@@ -160,14 +171,14 @@ else:
             st.cache_data.clear()
             st.rerun()
 
-    # AKO JE ADMIN - ADMINISTRACIJSKE KONTROLE (UČITAVANJE SLIKA I POZADINE NA GITHUB)
+    # AKO JE ADMIN - ADMINISTRACIJSKE KONTROLE
     if st.session_state.is_admin:
         with st.container():
             st.markdown(
                 """
                 <div class="admin-panel">
                     <h4 style='color: #2c2c2c; font-family: "Cormorant Garamond", serif; margin-bottom: 5px;'>👑 Admin: Upravljanje sadržajem</h4>
-                    <p style='color: #666; font-size: 0.9rem;'>Ovdje možeš učitavati nove slike u galeriju ili promijeniti pozadinsku sliku stranice.</p>
+                    <p style='color: #666; font-size: 0.9rem;'>Učitaj nove slike u galeriju ili postavi novu pozadinsku sliku koja će se automatski primijeniti.</p>
                 </div>
                 """,
                 unsafe_allow_html=True
@@ -213,50 +224,50 @@ else:
                                 st.cache_data.clear()
                                 st.rerun()
                             else:
-                                st.error("Došlo je do greške prilikom spremanja. Provjerite GitHub token.")
+                                st.error("Došlo je do greške prilikom spremanja.")
                         except Exception as e:
                             st.error(f"Greška: {e}")
 
             st.write("---")
 
-            # SEKCIJA 2: UPLOAD POZADINSKE SLIKE
-            st.markdown("##### 🖼️ Promjena pozadinske slike stranice")
+            # SEKCIJA 2: UPLOAD POZADINSKE SLIKE (Automatski sprema kao background.jpg)
+            st.markdown("##### 🖼️ Promjena pozadinske slike")
             bg_file = st.file_uploader("Odaberi novu pozadinsku sliku", type=['png', 'jpg', 'jpeg', 'webp'], key="bg_uploader")
             
             if bg_file:
-                if st.button("🚀 Postavi novu pozadinu", use_container_width=True):
-                    with st.spinner("Spremam pozadinsku sliku na GitHub..."):
+                if st.button("🚀 Postavi i spremi novu pozadinu", use_container_width=True):
+                    with st.spinner("Postavljam novu pozadinsku sliku..."):
                         try:
                             repo_owner = st.secrets["github"]["owner"]
                             repo_name = st.secrets["github"]["repo"]
                             token = st.secrets["github"]["token"]
                             
-                            file_name = f"background_{bg_file.name}"
+                            # Fiksno spremamo kao background.jpg da ga aplikacija uvijek lako nađe
+                            file_name = "background.jpg"
                             file_content = bg_file.read()
                             encoded_content = base64.b64encode(file_content).decode("utf-8")
                             
-                            # Spremamo pozadinu u korijen repozitorija ili u posebnu datoteku
                             api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{file_name}"
+                            headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
                             
                             payload = {
-                                "message": f"Ažurirana pozadinska slika preko Streamlita",
+                                "message": f"Ažurirana pozadinska slika (background.jpg)",
                                 "content": encoded_content
                             }
                             
-                            # Provjeravamo postoji li već stara pozadina da dohvatimo njen sha (GitHub API zahtijeva sha za update)
-                            get_resp = requests.get(api_url, headers={"Authorization": f"token {token}"})
+                            # Provjera postoji li već stara background.jpg da dobijemo njezin sha (GitHub API traži sha kod zamjene datoteke)
+                            get_resp = requests.get(api_url, headers=headers)
                             if get_resp.status_code == 200:
                                 payload["sha"] = get_resp.json().get("sha")
 
-                            response = requests.put(api_url, json=payload, headers={"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"})
+                            response = requests.put(api_url, json=payload, headers=headers)
                             
                             if response.status_code in [201, 200]:
-                                download_url = response.json()["content"]["download_url"]
-                                st.session_state.custom_bg_url = download_url
-                                st.success("Nova pozadinska slika uspješno postavljena i spremljena!")
+                                st.success("Pozadina uspješno postavljena! Osvježavam stranicu...")
+                                st.cache_data.clear()
                                 st.rerun()
                             else:
-                                st.error("Greška pri spremanju pozadine na GitHub.")
+                                st.error("Greška pri spremanju pozadine.")
                         except Exception as e:
                             st.error(f"Greška: {e}")
 
