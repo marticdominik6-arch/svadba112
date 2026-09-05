@@ -186,15 +186,15 @@ else:
             
             # SEKCIJA 1: UPLOAD SLIKA U GALERIJU
             st.markdown("##### 📸 Dodavanje slika u galeriju")
-            uploaded_files = st.file_uploader("Odaberi fotografije za galeriju", type=['png', 'jpg', 'jpeg', 'webp'], accept_multiple_files=True, key="gallery_uploader")
+            target_folder = st.selectbox("Odaberi mapu za spremanje slika", ["galerija1", "galerija2"])
+            uploaded_files = st.file_uploader(f"Odaberi fotografije za mapu '{target_folder}'", type=['png', 'jpg', 'jpeg', 'webp'], accept_multiple_files=True, key="gallery_uploader")
             
             if uploaded_files:
-                if st.button("🚀 Spremi galerijske slike na GitHub", use_container_width=True):
-                    with st.spinner("Spremam slike na GitHub..."):
+                if st.button(f"🚀 Spremi slike u '{target_folder}' na GitHub", use_container_width=True):
+                    with st.spinner(f"Spremam slike u {target_folder}..."):
                         try:
                             repo_owner = st.secrets["github"]["owner"]
                             repo_name = st.secrets["github"]["repo"]
-                            folder_path = st.secrets["github"]["folder"]
                             token = st.secrets["github"]["token"]
                             
                             headers = {
@@ -208,10 +208,10 @@ else:
                                 file_content = uploaded_file.read()
                                 encoded_content = base64.b64encode(file_content).decode("utf-8")
                                 
-                                api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{folder_path}/{file_name}"
+                                api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{target_folder}/{file_name}"
                                 
                                 payload = {
-                                    "message": f"Dodana nova slika {file_name} preko Streamlita",
+                                    "message": f"Dodana nova slika {file_name} u {target_folder}",
                                     "content": encoded_content
                                 }
                                 
@@ -220,7 +220,7 @@ else:
                                     success_count += 1
                                     
                             if success_count > 0:
-                                st.success(f"Uspješno spremljeno {success_count} slika na GitHub!")
+                                st.success(f"Uspješno spremljeno {success_count} slika u {target_folder}!")
                                 st.cache_data.clear()
                                 st.rerun()
                             else:
@@ -230,7 +230,7 @@ else:
 
             st.write("---")
 
-            # SEKCIJA 2: UPLOAD POZADINSKE SLIKE (Automatski sprema kao background.jpg)
+            # SEKCIJA 2: UPLOAD POZADINSKE SLIKE
             st.markdown("##### 🖼️ Promjena pozadinske slike")
             bg_file = st.file_uploader("Odaberi novu pozadinsku sliku", type=['png', 'jpg', 'jpeg', 'webp'], key="bg_uploader")
             
@@ -242,7 +242,6 @@ else:
                             repo_name = st.secrets["github"]["repo"]
                             token = st.secrets["github"]["token"]
                             
-                            # Fiksno spremamo kao background.jpg da ga aplikacija uvijek lako nađe
                             file_name = "background.jpg"
                             file_content = bg_file.read()
                             encoded_content = base64.b64encode(file_content).decode("utf-8")
@@ -255,7 +254,6 @@ else:
                                 "content": encoded_content
                             }
                             
-                            # Provjera postoji li već stara background.jpg da dobijemo njezin sha (GitHub API traži sha kod zamjene datoteke)
                             get_resp = requests.get(api_url, headers=headers)
                             if get_resp.status_code == 200:
                                 payload["sha"] = get_resp.json().get("sha")
@@ -273,32 +271,51 @@ else:
 
         st.divider()
 
-    # DOHVAT SLIKA S GITHUBA
+    # DOHVAT SLIKA IZ OBA FOLDERA (galerija1 i galerija2) S GITHUBA
     @st.cache_data(ttl=3600)
     def fetch_github_images():
         image_resources = []
         try:
             repo_owner = st.secrets["github"]["owner"]
             repo_name = st.secrets["github"]["repo"]
-            folder_path = st.secrets["github"]["folder"]
+            token = st.secrets["github"]["token"]
             
-            api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{folder_path}"
-            headers = {}
-            if "token" in st.secrets["github"]:
-                headers["Authorization"] = f"token {st.secrets['github']['token']}"
+            headers = {
+                "Authorization": f"token {token}",
+                "Accept": "application/vnd.github.v3+json"
+            }
+            
+            # Provjeravamo obje mape redom
+            folders_to_check = ["galerija1", "galerija2"]
+            
+            for folder_path in folders_to_check:
+                page = 1
+                while True:
+                    api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{folder_path}?page={page}&per_page=100"
+                    response = requests.get(api_url, headers=headers)
+                    
+                    if response.status_code != 200:
+                        break # Ako folder ne postoji, nastavi dalje
+                        
+                    files = response.json()
+                    if not isinstance(files, list) or len(files) == 0:
+                        break
+                        
+                    for file in files:
+                        if file["type"] == "file" and file["name"].lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+                            image_resources.append({
+                                "secure_url": file["download_url"],
+                                "public_id": file["name"]
+                            })
+                    
+                    if len(files) < 100:
+                        break
+                    page += 1
                 
-            response = requests.get(api_url, headers=headers)
-            if response.status_code == 200:
-                files = response.json()
-                for file in files:
-                    if file["type"] == "file" and file["name"].lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
-                        image_resources.append({
-                            "secure_url": file["download_url"],
-                            "public_id": file["name"]
-                        })
         except Exception as e:
             st.error(f"Greška prilikom spajanja na GitHub: {e}")
 
+        # Pametno sortiranje po brojevima u nazivu datoteke
         def extract_number(resource):
             public_id = resource.get("public_id", "")
             match = re.search(r'\((\d+)\)', public_id)
@@ -314,7 +331,7 @@ else:
     image_resources = fetch_github_images()
 
     if not image_resources:
-        st.info("Trenutno nema slika u GitHub repozitoriju. Učitajte prve slike iznad kao administrator.")
+        st.info("Trenutno nema slika u mapama `galerija1` ili `galerija2`. Učitajte prve slike iznad kao administrator.")
     else:
         col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
         with col_btn2:
