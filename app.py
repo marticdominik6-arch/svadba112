@@ -2,9 +2,6 @@ import os
 import re
 import requests
 import streamlit as st
-import cloudinary
-import cloudinary.uploader
-import cloudinary.api
 
 # 1. Konfiguracija stranice i čista portfolio tema
 st.set_page_config(
@@ -12,17 +9,6 @@ st.set_page_config(
     page_icon="💍",
     layout="wide",
 )
-
-# Inicijalizacija Cloudinary-ja (samo za pozadinsku sliku, ako zatreba)
-try:
-    cloudinary.config(
-        cloud_name = st.secrets["cloudinary"]["cloud_name"],
-        api_key = st.secrets["cloudinary"]["api_key"],
-        api_secret = st.secrets["cloudinary"]["api_secret"],
-        secure = True
-    )
-except Exception:
-    pass
 
 # Inicijalizacija stanja prijave i indeksa za galeriju
 if "logged_in" not in st.session_state:
@@ -32,18 +18,8 @@ if "is_admin" not in st.session_state:
 if "viewing_image_index" not in st.session_state:
     st.session_state.viewing_image_index = None
 
-# Pozadinska slika (fallback na Unsplash ako nema na Cloudinaryju)
-@st.cache_data(ttl=3600)
-def get_background():
-    try:
-        resources = cloudinary.api.resources(type="upload", prefix="background/", max_results=1)
-        if resources.get("resources"):
-            return resources["resources"][0]["secure_url"]
-    except Exception:
-        pass
-    return "https://images.unsplash.com/photo-1519741497674-611481863552"
-
-background_css = get_background()
+# Pozadinska slika (fiksna elegantna pozadina)
+background_css = "https://images.unsplash.com/photo-1519741497674-611481863552"
 
 # 2. Vrhunski CSS za elegantan izgled i pozicioniranje
 st.markdown(
@@ -183,34 +159,12 @@ else:
             st.markdown(
                 """
                 <div class="admin-panel">
-                    <h4 style='color: #2c2c2c; font-family: "Cormorant Garamond", serif; margin-bottom: 15px;'>👑 Upravljanje galerijom (Admin kontrole)</h4>
+                    <h4 style='color: #2c2c2c; font-family: "Cormorant Garamond", serif; margin-bottom: 5px;'>👑 Upravljanje galerijom (Admin kontrole)</h4>
+                    <p style='color: #666; font-size: 0.9rem;'>Slike za galeriju se povlače izravno s tvog GitHub repozitorija. Nove fotografije jednostavno ubaci u mapu na GitHubu.</p>
                 </div>
                 """,
                 unsafe_allow_html=True
             )
-            
-            admin_col1, admin_col2 = st.columns(2)
-            
-            with admin_col1:
-                st.markdown("**Promijeni pozadinsku sliku**")
-                bg_file = st.file_uploader("Pozadina", type=["jpg", "jpeg", "png"], key="bg_upload", label_visibility="collapsed")
-                if bg_file:
-                    if st.button("Primijeni pozadinu", use_container_width=True):
-                        with st.spinner("Učitavanje..."):
-                            try:
-                                old_bgs = cloudinary.api.resources(type="upload", prefix="background/")
-                                for b in old_bgs.get("resources", []):
-                                    cloudinary.uploader.destroy(b["public_id"])
-                            except Exception:
-                                pass
-                            cloudinary.uploader.upload(bg_file, folder="background", use_filename=True, unique_filename=False)
-                            st.cache_data.clear()
-                            st.success("Pozadina promijenjena!")
-                            st.rerun()
-
-            with admin_col2:
-                st.info("💡 Slike za galeriju se povlače izravno s tvog GitHub repozitorija. Nove slike dodaj izravno u GitHub mapu definiranu u postavkama (Secrets).")
-
         st.divider()
 
     # DOHVAT SLIKA S GITHUBA
@@ -237,7 +191,7 @@ else:
                             "public_id": file["name"]
                         })
             else:
-                st.warning(f"GitHub API je vratio statusni kod: {response.status_code}. Provjeri postavke owner, repo i folder u Secretsima.")
+                st.warning(f"GitHub API status: {response.status_code}. Provjeri postavke u Secretsima.")
         except Exception as e:
             st.error(f"Greška prilikom spajanja na GitHub: {e}")
 
@@ -256,7 +210,7 @@ else:
     image_resources = fetch_github_images()
 
     if not image_resources:
-        st.info("Trenutno nema slika u GitHub repozitoriju ili putanja nije točna. Provjeri postavke mape u Streamlit Secretsima.")
+        st.info("Trenutno nema slika u GitHub repozitoriju ili putanja nije točna. Provjeri postavke u Streamlit Secretsima.")
     else:
         col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
         with col_btn2:
