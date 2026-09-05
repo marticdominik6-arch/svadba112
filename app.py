@@ -1,10 +1,10 @@
 import os
 import re
+import requests
 import streamlit as st
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
-from PIL import Image
 
 # 1. Konfiguracija stranice i čista portfolio tema
 st.set_page_config(
@@ -13,7 +13,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# Inicijalizacija Cloudinary-ja iz Streamlit Secrets
+# Inicijalizacija Cloudinary-ja (samo za pozadinsku sliku, ako zatreba)
 try:
     cloudinary.config(
         cloud_name = st.secrets["cloudinary"]["cloud_name"],
@@ -32,7 +32,7 @@ if "is_admin" not in st.session_state:
 if "viewing_image_index" not in st.session_state:
     st.session_state.viewing_image_index = None
 
-# Pozadinska slika (keširano da se ne učitava svaki put)
+# Pozadinska slika (fallback na Unsplash ako nema na Cloudinaryju)
 @st.cache_data(ttl=3600)
 def get_background():
     try:
@@ -107,7 +107,7 @@ st.markdown(
     }}
 
     .login-wrapper {{
-        padding-top: 720px;
+        padding-top: 150px;
     }}
     
     .admin-panel {{
@@ -146,12 +146,9 @@ if not st.session_state.logged_in:
             if submit_login:
                 try:
                     gost_pass = st.secrets["passwords"]["gost_sifra"]
-                    admin_pass = st.secrets["passwords"]["admin_sifra"]
+                    admin_pass = st.secrets["passwords"]["admin_pass"]
                 except Exception:
                     gost_pass = "md2026"
-                    admin_pass = "Ruksak96"
-                    
-                if not admin_pass:
                     admin_pass = "Ruksak96"
                     
                 if entered_password == gost_pass:
@@ -168,7 +165,6 @@ if not st.session_state.logged_in:
 
 # 4. Glavni dio aplikacije (nakon prijave)
 else:
-    # Gornja traka za odjavu i status
     top_c1, top_c2 = st.columns([8, 2])
     with top_c1:
         role_text = "👑 Prijavljeni ste kao Administrator" if st.session_state.is_admin else "✨ Prijavljeni ste kao Uzvanik"
@@ -193,7 +189,7 @@ else:
                 unsafe_allow_html=True
             )
             
-            admin_col1, admin_col2, admin_col3 = st.columns(3)
+            admin_col1, admin_col2 = st.columns(2)
             
             with admin_col1:
                 st.markdown("**Promijeni pozadinsku sliku**")
@@ -213,106 +209,55 @@ else:
                             st.rerun()
 
             with admin_col2:
-                st.markdown("**Dodaj nove fotografije**")
-                uploaded_files = st.file_uploader("Slike za album", type=["jpg", "jpeg", "png"], accept_multiple_files=True, key="img_upload", label_visibility="collapsed")
-                if uploaded_files:
-                    if st.button("Uploadaj na Cloud", use_container_width=True):
-                        progress_bar = st.progress(0)
-                        total_files = len(uploaded_files)
-                        for i, uploaded_file in enumerate(uploaded_files):
-                            cloudinary.uploader.upload(
-                                uploaded_file, 
-                                folder="svadba_galerija", 
-                                use_filename=True, 
-                                unique_filename=False,
-                                overwrite=True
-                            )
-                            progress_bar.progress((i + 1) / total_files)
-                        st.cache_data.clear()
-                        st.success("Fotografije spremljene!")
-                        st.rerun()
-
-            with admin_col3:
-                st.markdown("**Opasna zona**")
-                if "confirm_delete_all" not in st.session_state:
-                    st.session_state.confirm_delete_all = False
-
-                if not st.session_state.confirm_delete_all:
-                    if st.button("🗑️ Obriši sve fotografije", use_container_width=True):
-                        st.session_state.confirm_delete_all = True
-                        st.rerun()
-                else:
-                    st.warning("Jeste li sigurni?")
-                    col_yes, col_no = st.columns(2)
-                    with col_yes:
-                        if st.button("Da, obriši", use_container_width=True):
-                            with st.spinner("Brišem sve slike..."):
-                                try:
-                                    next_cursor = None
-                                    while True:
-                                        params = {"type": "upload", "prefix": "svadba_galerija/", "max_results": 500}
-                                        if next_cursor:
-                                            params["next_cursor"] = next_cursor
-                                        all_res = cloudinary.api.resources(**params)
-                                        for r in all_res.get("resources", []):
-                                            cloudinary.uploader.destroy(r["public_id"])
-                                        next_cursor = all_res.get("next_cursor")
-                                        if not next_cursor:
-                                            break
-                                except Exception:
-                                    pass
-                            st.cache_data.clear()
-                            st.session_state.confirm_delete_all = False
-                            st.success("Obrisano!")
-                            st.rerun()
-                    with col_no:
-                        if st.button("Odustani", use_container_width=True):
-                            st.session_state.confirm_delete_all = False
-                            st.rerun()
+                st.info("💡 Slike za galeriju se povlače izravno s tvog GitHub repozitorija. Nove slike dodaj izravno u GitHub mapu definiranu u postavkama (Secrets).")
 
         st.divider()
 
-    # DOHVAT SLIKA S KEŠIRANJEM (Puni se samo jednom, kasnije radi trenutačno)
+    # DOHVAT SLIKA S GITHUBA
     @st.cache_data(ttl=3600)
-    def fetch_all_images():
+    def fetch_github_images():
         image_resources = []
         try:
-            next_cursor = None
-            while True:
-                params = {"type": "upload", "prefix": "svadba_galerija/", "max_results": 500}
-                if next_cursor:
-                    params["next_cursor"] = next_cursor
-                
-                result = cloudinary.api.resources(**params)
-                raw_resources = result.get("resources", [])
-                image_resources.extend(raw_resources)
-                
-                next_cursor = result.get("next_cursor")
-                if not next_cursor:
-                    break
+            repo_owner = st.secrets["github"]["owner"]
+            repo_name = st.secrets["github"]["repo"]
+            folder_path = st.secrets["github"]["folder"]
             
-            def extract_number(resource):
-                public_id = resource.get("public_id", "")
-                match = re.search(r'\((\d+)\)', public_id)
-                if match:
-                    return int(match.group(1))
+            api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{folder_path}"
+            headers = {}
+            if "token" in st.secrets["github"]:
+                headers["Authorization"] = f"token {st.secrets['github']['token']}"
                 
-                numbers = re.findall(r'\d+', public_id)
-                if numbers:
-                    return int(numbers[-1])
-                return 0
+            response = requests.get(api_url, headers=headers)
+            if response.status_code == 200:
+                files = response.json()
+                for file in files:
+                    if file["type"] == "file" and file["name"].lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+                        image_resources.append({
+                            "secure_url": file["download_url"],
+                            "public_id": file["name"]
+                        })
+            else:
+                st.warning(f"GitHub API je vratio statusni kod: {response.status_code}. Provjeri postavke owner, repo i folder u Secretsima.")
+        except Exception as e:
+            st.error(f"Greška prilikom spajanja na GitHub: {e}")
 
-            image_resources = sorted(image_resources, key=extract_number)
-        except Exception:
-            pass
-        return image_resources
+        def extract_number(resource):
+            public_id = resource.get("public_id", "")
+            match = re.search(r'\((\d+)\)', public_id)
+            if match:
+                return int(match.group(1))
+            numbers = re.findall(r'\d+', public_id)
+            if numbers:
+                return int(numbers[-1])
+            return 0
 
-    image_resources = fetch_all_images()
+        return sorted(image_resources, key=extract_number)
+
+    image_resources = fetch_github_images()
 
     if not image_resources:
-        st.info("Trenutno nema slika u albumu. Uskoro stižu prve uspomene!" if not st.session_state.is_admin else "Galerija je prazna. Dodajte prve fotografije putem gornjeg izbornika.")
+        st.info("Trenutno nema slika u GitHub repozitoriju ili putanja nije točna. Provjeri postavke mape u Streamlit Secretsima.")
     else:
-        # Gumb za pokretanje slideshow-a
         col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
         with col_btn2:
             if st.button("✨ Pregled svih slika (Slideshow)", use_container_width=True):
@@ -321,7 +266,7 @@ else:
         
         st.write("") 
 
-        # ----------------- PREGLED JEDNE SLIKE (SLIDESHOW) -----------------
+        # PREGLED JEDNE SLIKE (SLIDESHOW)
         if st.session_state.viewing_image_index is not None:
             idx = st.session_state.viewing_image_index
             total_imgs = len(image_resources)
@@ -360,19 +305,17 @@ else:
             st.markdown(f"<a href='{full_url}' target='_blank' class='download-link' style='font-size: 0.9rem; padding: 8px; max-width: 300px; margin: 15px auto; background: #fff; border: 1px solid #ccc; border-radius: 5px;'>Preuzmi izvornu sliku</a>", unsafe_allow_html=True)
 
         else:
-            # ----------------- STRANČENJE (PAGINACIJA MREŽE SLIKA) -----------------
-            IMAGES_PER_PAGE = 60  # Prikazuje 60 slika po stranici za maksimalnu brzinu
+            # MREŽA SLIKA S PAGINACIJOM
+            IMAGES_PER_PAGE = 60 
             total_images = len(image_resources)
             total_pages = (total_images - 1) // IMAGES_PER_PAGE + 1
 
             if "current_page" not in st.session_state:
                 st.session_state.current_page = 0
 
-            # Osiguranje da je stranica u granicama
             if st.session_state.current_page >= total_pages:
                 st.session_state.current_page = 0
 
-            # Izbornik stranica na vrhu i dnu galerije
             p_col1, p_col2, p_col3 = st.columns([1, 2, 1])
             with p_col2:
                 page_options = [f"Stranica {i+1} od {total_pages} (Slike {i*IMAGES_PER_PAGE+1}-{min((i+1)*IMAGES_PER_PAGE, total_images)})" for i in range(total_pages)]
@@ -384,29 +327,15 @@ else:
 
             st.write("")
 
-            # Uzimamo samo onih 60 slika koje pripadaju trenutnoj stranici
             start_idx = st.session_state.current_page * IMAGES_PER_PAGE
             end_idx = min(start_idx + IMAGES_PER_PAGE, total_images)
             page_resources = image_resources[start_idx:end_idx]
 
-            # Prikaz mreže za trenutnu stranicu
             cols = st.columns(3)
             for index, res in enumerate(page_resources):
                 col_idx = index % 3
                 img_url = res["secure_url"]
-                public_id = res["public_id"]
                 
                 with cols[col_idx]:
                     st.image(img_url, use_container_width=True)
-                    
-                    if st.session_state.is_admin:
-                        sub_c1, sub_c2 = st.columns(2)
-                        with sub_c1:
-                            st.markdown(f"<a href='{img_url}' target='_blank' class='download-link' style='background: rgba(255,255,255,0.8); border-radius: 4px; margin-bottom: 5px;'>Preuzmi</a>", unsafe_allow_html=True)
-                        with sub_c2:
-                            if st.button("🗑️", key=f"del_{public_id}", use_container_width=True, help="Obriši sliku"):
-                                cloudinary.uploader.destroy(public_id)
-                                st.cache_data.clear()
-                                st.rerun()
-                    else:
-                        st.markdown(f"<a href='{img_url}' target='_blank' class='download-link' style='background: rgba(255,255,255,0.8); border-radius: 4px; margin-bottom: 5px;'>Preuzmi sliku</a>", unsafe_allow_html=True)
+                    st.markdown(f"<a href='{img_url}' target='_blank' class='download-link' style='background: rgba(255,255,255,0.8); border-radius: 4px; margin-bottom: 5px;'>Preuzmi sliku</a>", unsafe_allow_html=True)
