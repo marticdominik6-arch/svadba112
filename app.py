@@ -1,5 +1,6 @@
 import os
 import re
+import base64
 import requests
 import streamlit as st
 
@@ -18,7 +19,7 @@ if "is_admin" not in st.session_state:
 if "viewing_image_index" not in st.session_state:
     st.session_state.viewing_image_index = None
 
-# Pozadinska slika (fiksna elegantna pozadina)
+# Pozadinska slika
 background_css = "https://images.unsplash.com/photo-1519741497674-611481863552"
 
 # 2. Vrhunski CSS za elegantan izgled i pozicioniranje
@@ -153,18 +154,61 @@ else:
             st.cache_data.clear()
             st.rerun()
 
-    # AKO JE ADMIN - ADMINISTRACIJSKE KONTROLE
+    # AKO JE ADMIN - ADMINISTRACIJSKE KONTROLE (UČITAVANJE SLIKA NA GITHUB)
     if st.session_state.is_admin:
         with st.container():
             st.markdown(
                 """
                 <div class="admin-panel">
-                    <h4 style='color: #2c2c2c; font-family: "Cormorant Garamond", serif; margin-bottom: 5px;'>👑 Upravljanje galerijom (Admin kontrole)</h4>
-                    <p style='color: #666; font-size: 0.9rem;'>Slike za galeriju se povlače izravno s tvog GitHub repozitorija. Nove fotografije jednostavno ubaci u mapu na GitHubu.</p>
+                    <h4 style='color: #2c2c2c; font-family: "Cormorant Garamond", serif; margin-bottom: 5px;'>👑 Admin: Učitavanje novih slika</h4>
+                    <p style='color: #666; font-size: 0.9rem;'>Odaberi slike s uređaja i one će se automatski spremiti u tvoj GitHub repozitorij.</p>
                 </div>
                 """,
                 unsafe_allow_html=True
             )
+            
+            uploaded_files = st.file_uploader("Dodaj nove fotografije u galeriju", type=['png', 'jpg', 'jpeg', 'webp'], accept_multiple_files=True)
+            
+            if uploaded_files:
+                if st.button("🚀 Spremi odabrane slike na GitHub", use_container_width=True):
+                    with st.spinner("Spremam slike na GitHub..."):
+                        try:
+                            repo_owner = st.secrets["github"]["owner"]
+                            repo_name = st.secrets["github"]["repo"]
+                            folder_path = st.secrets["github"]["folder"]
+                            token = st.secrets["github"]["token"]
+                            
+                            headers = {
+                                "Authorization": f"token {token}",
+                                "Accept": "application/vnd.github.v3+json"
+                            }
+                            
+                            success_count = 0
+                            for uploaded_file in uploaded_files:
+                                file_name = uploaded_file.name
+                                file_content = uploaded_file.read()
+                                encoded_content = base64.b64encode(file_content).decode("utf-8")
+                                
+                                api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{folder_path}/{file_name}"
+                                
+                                payload = {
+                                    "message": f"Dodana nova slika {file_name} preko Streamlita",
+                                    "content": encoded_content
+                                }
+                                
+                                response = requests.put(api_url, json=payload, headers=headers)
+                                if response.status_code in [201, 200]:
+                                    success_count += 1
+                                    
+                            if success_count > 0:
+                                st.success(f"Uspješno spremljeno {success_count} slika na GitHub!")
+                                st.cache_data.clear()
+                                st.rerun()
+                            else:
+                                st.error("Došlo je do greške prilikom spremanja. Provjerite GitHub token.")
+                        except Exception as e:
+                            st.error(f"Greška: {e}")
+
         st.divider()
 
     # DOHVAT SLIKA S GITHUBA
@@ -190,8 +234,6 @@ else:
                             "secure_url": file["download_url"],
                             "public_id": file["name"]
                         })
-            else:
-                st.warning(f"GitHub API status: {response.status_code}. Provjeri postavke u Secretsima.")
         except Exception as e:
             st.error(f"Greška prilikom spajanja na GitHub: {e}")
 
@@ -210,7 +252,7 @@ else:
     image_resources = fetch_github_images()
 
     if not image_resources:
-        st.info("Trenutno nema slika u GitHub repozitoriju ili putanja nije točna. Provjeri postavke u Streamlit Secretsima.")
+        st.info("Trenutno nema slika u GitHub repozitoriju. Učitajte prve slike iznad kao administrator.")
     else:
         col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
         with col_btn2:
