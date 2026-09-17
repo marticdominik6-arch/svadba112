@@ -274,13 +274,13 @@ else:
 
         st.divider()
 
-    # IZBORNIK SEKCIJA (Glavna galerija vs Svadbeni album)
+    # IZBORNIK SEKCIJA (Glavna galerija vs Svadbeni album vs Video uspomene)
     st.write("")
-    nav_col1, nav_col2, nav_col3 = st.columns([1, 2, 1])
+    nav_col1, nav_col2, nav_col3 = st.columns([0.5, 3, 0.5])
     with nav_col2:
         selected_section = st.radio(
             "Odabir galerije",
-            ["📸 Glavna galerija", "💍 Svadbeni album"],
+            ["📸 Glavna galerija", "💍 Svadbeni album", "🎬 Video uspomene"],
             horizontal=True,
             key="section_radio",
             label_visibility="collapsed"
@@ -288,139 +288,155 @@ else:
     
     st.write("")
 
-    # FUNKCIJA ZA DOHVAT SLIKA IZ ODREĐENIH MAPA KROZ GIT TREES API
-    @st.cache_data(ttl=3600)
-    def fetch_github_images(folders_tuple):
-        image_resources = []
-        try:
-            repo_owner = st.secrets["github"]["owner"]
-            repo_name = st.secrets["github"]["repo"]
-            token = st.secrets["github"]["token"]
-            
-            headers = {
-                "Authorization": f"token {token}",
-                "Accept": "application/vnd.github.v3+json"
-            }
-            
-            api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/git/trees/HEAD?recursive=1"
-            response = requests.get(api_url, headers=headers)
-            
-            if response.status_code == 200:
-                tree_data = response.json().get("tree", [])
-                
-                for item in tree_data:
-                    path = item.get("path", "")
-                    if path.startswith(folders_tuple) and path.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
-                        file_name = path.split('/')[-1]
-                        download_url = f"https://raw.githubusercontent.com/{repo_owner}/{repo_name}/main/{path}"
-                        
-                        image_resources.append({
-                            "secure_url": download_url,
-                            "public_id": file_name
-                        })
-                
-        except Exception as e:
-            st.error(f"Greška prilikom spajanja na GitHub: {e}")
-
-        def extract_number(resource):
-            public_id = resource.get("public_id", "")
-            match = re.search(r'\((\d+)\)', public_id)
-            if match:
-                return int(match.group(1))
-            numbers = re.findall(r'\d+', public_id)
-            if numbers:
-                return int(numbers[-1])
-            return 0
-
-        return sorted(image_resources, key=extract_number)
-
-    # Određujemo koje mape povlačimo ovisno o odabranoj sekciji
-    if selected_section == "📸 Glavna galerija":
-        image_resources = fetch_github_images(("galerija1/", "galerija2/"))
-    else:
-        image_resources = fetch_github_images(("galerija3/",))
-
-    if not image_resources:
-        st.info(f"Trenutno nema slika u odabranoj sekciji ({selected_section}). Učitajte prve slike iznad kao administrator.")
-    else:
-        col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
-        with col_btn2:
-            if st.button(f"✨ Pregled slika u {selected_section} (Slideshow)", use_container_width=True):
-                st.session_state.viewing_image_index = 0
-                st.rerun()
+    # AKO JE ODABRANA SEKCIJA "🎬 Video uspomene"
+    if selected_section == "🎬 Video uspomene":
+        st.markdown("<h3 style='text-align: center; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.5); font-family: \"Cormorant Garamond\", serif;'>Svadbeni video zapisi</h3>", unsafe_allow_html=True)
+        st.write("")
         
-        st.write("") 
-
-        # PREGLED JEDNE SLIKE (SLIDESHOW)
-        if st.session_state.viewing_image_index is not None:
-            idx = st.session_state.viewing_image_index
-            total_imgs = len(image_resources)
-            current_res = image_resources[idx]
-            full_url = current_res["secure_url"]
-
-            col_b1, col_b2 = st.columns([1, 4])
-            with col_b1:
-                if st.button("← Natrag na mrežu slika", use_container_width=True):
-                    st.session_state.viewing_image_index = None
-                    st.rerun()
-
-            st.markdown(f"<h4 style='text-align: center; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.5); margin-top: 5px;'>Fotografija {idx + 1} od {total_imgs}</h4>", unsafe_allow_html=True)
+        # Prikaz videa u dva stupca
+        v_col1, v_col2 = st.columns(2)
+        
+        with v_col1:
+            st.video("https://youtu.be/GqVV_WRyyjI")
             
-            col_left, col_img, col_right = st.columns([1, 8, 1])
-            
-            with col_left:
-                st.write("")
-                st.write("")
-                st.write("")
-                if st.button("◀", key="prev_slide", use_container_width=True, help="Prethodna slika"):
-                    st.session_state.viewing_image_index = (idx - 1) % total_imgs
-                    st.rerun()
+        with v_col2:
+            st.video("https://youtu.be/8qYVYmdbYWg")
+
+    # AKO SU ODABRANE FOTOGRAFSKE SEKCIJE
+    else:
+        # FUNKCIJA ZA DOHVAT SLIKA IZ ODREĐENIH MAPA KROZ GIT TREES API
+        @st.cache_data(ttl=3600)
+        def fetch_github_images(folders_tuple):
+            image_resources = []
+            try:
+                repo_owner = st.secrets["github"]["owner"]
+                repo_name = st.secrets["github"]["repo"]
+                token = st.secrets["github"]["token"]
+                
+                headers = {
+                    "Authorization": f"token {token}",
+                    "Accept": "application/vnd.github.v3+json"
+                }
+                
+                api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/git/trees/HEAD?recursive=1"
+                response = requests.get(api_url, headers=headers)
+                
+                if response.status_code == 200:
+                    tree_data = response.json().get("tree", [])
                     
-            with col_img:
-                st.image(full_url, use_container_width=True)
-                
-            with col_right:
-                st.write("")
-                st.write("")
-                st.write("")
-                if st.button("▶", key="next_slide", use_container_width=True, help="Sljedeća slika"):
-                    st.session_state.viewing_image_index = (idx + 1) % total_imgs
-                    st.rerun()
+                    for item in tree_data:
+                        path = item.get("path", "")
+                        if path.startswith(folders_tuple) and path.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+                            file_name = path.split('/')[-1]
+                            download_url = f"https://raw.githubusercontent.com/{repo_owner}/{repo_name}/main/{path}"
+                            
+                            image_resources.append({
+                                "secure_url": download_url,
+                                "public_id": file_name
+                            })
+                    
+            except Exception as e:
+                st.error(f"Greška prilikom spajanja na GitHub: {e}")
 
-            st.markdown(f"<a href='{full_url}' target='_blank' class='download-link' style='font-size: 0.9rem; padding: 8px; max-width: 300px; margin: 15px auto; background: #fff; border: 1px solid #ccc; border-radius: 5px;'>Preuzmi izvornu sliku</a>", unsafe_allow_html=True)
+            def extract_number(resource):
+                public_id = resource.get("public_id", "")
+                match = re.search(r'\((\d+)\)', public_id)
+                if match:
+                    return int(match.group(1))
+                numbers = re.findall(r'\d+', public_id)
+                if numbers:
+                    return int(numbers[-1])
+                return 0
 
+            return sorted(image_resources, key=extract_number)
+
+        # Određujemo koje mape povlačimo ovisno o odabranoj sekciji
+        if selected_section == "📸 Glavna galerija":
+            image_resources = fetch_github_images(("galerija1/", "galerija2/"))
         else:
-            # MREŽA SLIKA S PAGINACIJOM
-            IMAGES_PER_PAGE = 60 
-            total_images = len(image_resources)
-            total_pages = (total_images - 1) // IMAGES_PER_PAGE + 1
+            image_resources = fetch_github_images(("galerija3/",))
 
-            if "current_page" not in st.session_state:
-                st.session_state.current_page = 0
-
-            if st.session_state.current_page >= total_pages:
-                st.session_state.current_page = 0
-
-            p_col1, p_col2, p_col3 = st.columns([1, 2, 1])
-            with p_col2:
-                page_options = [f"Stranica {i+1} od {total_pages} (Slike {i*IMAGES_PER_PAGE+1}-{min((i+1)*IMAGES_PER_PAGE, total_images)})" for i in range(total_pages)]
-                selected_page_str = st.selectbox("Navigacija po stranicama", page_options, index=st.session_state.current_page, label_visibility="collapsed")
-                main_page_idx = page_options.index(selected_page_str)
-                if main_page_idx != st.session_state.current_page:
-                    st.session_state.current_page = main_page_idx
+        if not image_resources:
+            st.info(f"Trenutno nema slika u odabranoj sekciji ({selected_section}). Učitajte prve slike iznad kao administrator.")
+        else:
+            col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
+            with col_btn2:
+                if st.button(f"✨ Pregled slika u {selected_section} (Slideshow)", use_container_width=True):
+                    st.session_state.viewing_image_index = 0
                     st.rerun()
+            
+            st.write("") 
 
-            st.write("")
+            # PREGLED JEDNE SLIKE (SLIDESHOW)
+            if st.session_state.viewing_image_index is not None:
+                idx = st.session_state.viewing_image_index
+                total_imgs = len(image_resources)
+                current_res = image_resources[idx]
+                full_url = current_res["secure_url"]
 
-            start_idx = st.session_state.current_page * IMAGES_PER_PAGE
-            end_idx = min(start_idx + IMAGES_PER_PAGE, total_images)
-            page_resources = image_resources[start_idx:end_idx]
+                col_b1, col_b2 = st.columns([1, 4])
+                with col_b1:
+                    if st.button("← Natrag na mrežu slika", use_container_width=True):
+                        st.session_state.viewing_image_index = None
+                        st.rerun()
 
-            cols = st.columns(3)
-            for index, res in enumerate(page_resources):
-                col_idx = index % 3
-                img_url = res["secure_url"]
+                st.markdown(f"<h4 style='text-align: center; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.5); margin-top: 5px;'>Fotografija {idx + 1} od {total_imgs}</h4>", unsafe_allow_html=True)
                 
-                with cols[col_idx]:
-                    st.image(img_url, use_container_width=True)
-                    st.markdown(f"<a href='{img_url}' target='_blank' class='download-link' style='background: rgba(255,255,255,0.8); border-radius: 4px; margin-bottom: 5px;'>Preuzmi sliku</a>", unsafe_allow_html=True)
+                col_left, col_img, col_right = st.columns([1, 8, 1])
+                
+                with col_left:
+                    st.write("")
+                    st.write("")
+                    st.write("")
+                    if st.button("◀", key="prev_slide", use_container_width=True, help="Prethodna slika"):
+                        st.session_state.viewing_image_index = (idx - 1) % total_imgs
+                        st.rerun()
+                        
+                with col_img:
+                    st.image(full_url, use_container_width=True)
+                    
+                with col_right:
+                    st.write("")
+                    st.write("")
+                    st.write("")
+                    if st.button("▶", key="next_slide", use_container_width=True, help="Sljedeća slika"):
+                        st.session_state.viewing_image_index = (idx + 1) % total_imgs
+                        st.rerun()
+
+                st.markdown(f"<a href='{full_url}' target='_blank' class='download-link' style='font-size: 0.9rem; padding: 8px; max-width: 300px; margin: 15px auto; background: #fff; border: 1px solid #ccc; border-radius: 5px;'>Preuzmi izvornu sliku</a>", unsafe_allow_html=True)
+
+            else:
+                # MREŽA SLIKA S PAGINACIJOM
+                IMAGES_PER_PAGE = 60 
+                total_images = len(image_resources)
+                total_pages = (total_images - 1) // IMAGES_PER_PAGE + 1
+
+                if "current_page" not in st.session_state:
+                    st.session_state.current_page = 0
+
+                if st.session_state.current_page >= total_pages:
+                    st.session_state.current_page = 0
+
+                p_col1, p_col2, p_col3 = st.columns([1, 2, 1])
+                with p_col2:
+                    page_options = [f"Stranica {i+1} od {total_pages} (Slike {i*IMAGES_PER_PAGE+1}-{min((i+1)*IMAGES_PER_PAGE, total_images)})" for i in range(total_pages)]
+                    selected_page_str = st.selectbox("Navigacija po stranicama", page_options, index=st.session_state.current_page, label_visibility="collapsed")
+                    main_page_idx = page_options.index(selected_page_str)
+                    if main_page_idx != st.session_state.current_page:
+                        st.session_state.current_page = main_page_idx
+                        st.rerun()
+
+                st.write("")
+
+                start_idx = st.session_state.current_page * IMAGES_PER_PAGE
+                end_idx = min(start_idx + IMAGES_PER_PAGE, total_images)
+                page_resources = image_resources[start_idx:end_idx]
+
+                cols = st.columns(3)
+                for index, res in enumerate(page_resources):
+                    col_idx = index % 3
+                    img_url = res["secure_url"]
+                    
+                    with cols[col_idx]:
+                        st.image(img_url, use_container_width=True)
+                        st.markdown(f"<a href='{img_url}' target='_blank' class='download-link' style='background: rgba(255,255,255,0.8); border-radius: 4px; margin-bottom: 5px;'>Preuzmi sliku</a>", unsafe_allow_html=True)
